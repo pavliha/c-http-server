@@ -7,24 +7,34 @@
 #include <unistd.h>
 
 #define BUFFER_SIZE 4096
+#define MAX_RESPONSE_SIZE 65536
 
 static void send_response(int client_fd, const char *status, const char *content_type,
                           const char *body) {
-  char response[BUFFER_SIZE];
-  snprintf(response, sizeof(response),
-           "HTTP/1.1 %s\r\n"
-           "Content-Type: %s\r\n"
-           "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
-           "Pragma: no-cache\r\n"
-           "Expires: 0\r\n"
-           "Connection: close\r\n"
-           "\r\n"
-           "%s",
-           status, content_type, body);
+  // Send headers first
+  char headers[512];
+  int header_len = snprintf(headers, sizeof(headers),
+                            "HTTP/1.1 %s\r\n"
+                            "Content-Type: %s\r\n"
+                            "Content-Length: %zu\r\n"
+                            "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+                            "Pragma: no-cache\r\n"
+                            "Expires: 0\r\n"
+                            "Connection: close\r\n"
+                            "\r\n",
+                            status, content_type, strlen(body));
 
-  ssize_t written = write(client_fd, response, strlen(response));
+  // Send headers
+  ssize_t written = write(client_fd, headers, header_len);
   if (written < 0) {
-    perror("Failed to send response");
+    perror("Failed to send headers");
+    return;
+  }
+
+  // Send body
+  written = write(client_fd, body, strlen(body));
+  if (written < 0) {
+    perror("Failed to send body");
   }
 }
 

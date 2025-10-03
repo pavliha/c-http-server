@@ -9,3 +9,6 @@ vendor/
 *.gcda
 *.gcno
 *.gcov
+node_modules
+test-results
+playwright-report

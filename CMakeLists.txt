@@ -92,3 +92,12 @@ add_custom_target(run_tests
     DEPENDS test_http test_db
     COMMENT "Running all tests"
 )
+
+# Development server target
+add_custom_target(dev
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/data
+    COMMAND ${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}
+    DEPENDS ${PROJECT_NAME}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running development server"
+)

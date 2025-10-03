@@ -1,0 +1,29 @@
+{
+  "name": "c-http-server",
+  "version": "1.0.0",
+  "description": "[![CI](https://github.com/pavliha/c-http-server/workflows/CI/badge.svg)](https://github.com/pavliha/c-http-server/actions) [![codecov](https://codecov.io/gh/pavliha/c-http-server/branch/master/graph/badge.svg)](https://codecov.io/gh/pavliha/c-http-server) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pavliha/c-http-server.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/pavliha/c-http-server/issues"
+  },
+  "homepage": "https://github.com/pavliha/c-http-server#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.55.1",
+    "playwright": "^1.55.1"
+  }
+}

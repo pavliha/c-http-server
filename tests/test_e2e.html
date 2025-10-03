@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>E2E Test - Register Toggle</title>
+</head>
+<body>
+  <h1>E2E Test Results</h1>
+  <div id="results"></div>
+
+  <script>
+    const results = document.getElementById('results');
+    let passed = 0;
+    let failed = 0;
+
+    function log(message, success = true) {
+      const div = document.createElement('div');
+      div.style.padding = '5px';
+      div.style.color = success ? 'green' : 'red';
+      div.textContent = (success ? '✓ ' : '✗ ') + message;
+      results.appendChild(div);
+      if (success) passed++;
+      else failed++;
+    }
+
+    async function runTests() {
+      try {
+        // Test 1: Fetch the page
+        log('Fetching http://localhost:8080...');
+        const response = await fetch('http://localhost:8080');
+        if (!response.ok) throw new Error('Failed to fetch page');
+        const html = await response.text();
+        log('Page fetched successfully');
+
+        // Test 2: Check for toggle link
+        if (html.includes('id="toggleLink"')) {
+          log('Toggle link element found in HTML');
+        } else {
+          log('Toggle link element NOT found', false);
+        }
+
+        // Test 3: Check for addEventListener
+        if (html.includes('addEventListener')) {
+          log('addEventListener found in JavaScript');
+        } else {
+          log('addEventListener NOT found', false);
+        }
+
+        // Test 4: Check for toggleForm function
+        if (html.includes('function toggleForm')) {
+          log('toggleForm function found');
+        } else {
+          log('toggleForm function NOT found', false);
+        }
+
+        // Test 5: Parse HTML and simulate in iframe
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        iframe.contentDocument.open();
+        iframe.contentDocument.write(html);
+        iframe.contentDocument.close();
+
+        // Wait for iframe to load
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const iframeDoc = iframe.contentDocument;
+        const toggleLink = iframeDoc.getElementById('toggleLink');
+        const formTitle = iframeDoc.getElementById('formTitle');
+        const submitBtn = iframeDoc.getElementById('submitBtn');
+
+        if (toggleLink) {
+          log('Toggle link accessible in DOM');
+
+          // Check initial state
+          if (formTitle.textContent === 'Login') {
+            log('Initial form title is "Login"');
+          } else {
+            log(`Initial form title is "${formTitle.textContent}" (expected "Login")`, false);
+          }
+
+          // Simulate click
+          log('Simulating click on Register link...');
+          toggleLink.click();
+
+          // Wait for DOM update
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // Check if form changed
+          if (formTitle.textContent === 'Register') {
+            log('✓✓✓ Form title changed to "Register" - TOGGLE WORKS!', true);
+          } else {
+            log(`Form title is "${formTitle.textContent}" (expected "Register") - TOGGLE FAILED!`, false);
+          }
+
+          if (submitBtn.textContent === 'Register') {
+            log('Submit button changed to "Register"');
+          } else {
+            log(`Submit button is "${submitBtn.textContent}" (expected "Register")`, false);
+          }
+
+          if (toggleLink.textContent === 'Login') {
+            log('Toggle link changed to "Login"');
+          } else {
+            log(`Toggle link is "${toggleLink.textContent}" (expected "Login")`, false);
+          }
+
+        } else {
+          log('Toggle link NOT found in DOM', false);
+        }
+
+        // Summary
+        const summary = document.createElement('div');
+        summary.style.marginTop = '20px';
+        summary.style.padding = '10px';
+        summary.style.fontWeight = 'bold';
+        summary.style.fontSize = '16px';
+        summary.style.backgroundColor = failed === 0 ? '#d4edda' : '#f8d7da';
+        summary.style.color = failed === 0 ? '#155724' : '#721c24';
+        summary.textContent = `Tests: ${passed} passed, ${failed} failed`;
+        results.appendChild(summary);
+
+      } catch (error) {
+        log(`Error: ${error.message}`, false);
+      }
+    }
+
+    // Run tests on page load
+    runTests();
+  </script>
+</body>
+</html>
