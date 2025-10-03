@@ -6,4 +6,9 @@ static const char embedded_html[] =
 
 static const unsigned int embedded_html_len = sizeof(embedded_html) - 1;
 
+static const char embedded_dashboard[] =
+    "@DASHBOARD_CONTENT@";
+
+static const unsigned int embedded_dashboard_len = sizeof(embedded_dashboard) - 1;
+
 #endif // STATIC_H

@@ -3,3 +3,6 @@ build-*/
 cmake-build-*/
 CMakeUserPresets.json
 .idea/
+server.db
+test.db
+vendor/

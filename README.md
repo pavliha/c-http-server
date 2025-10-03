@@ -11,6 +11,11 @@ cmake --build --preset dev
 ./build/bin/c-http-server
 ```
 
+**Run tests:**
+```bash
+cd build && ctest --output-on-failure
+```
+
 **Release build:**
 ```bash
 cmake --preset release
@@ -53,25 +58,78 @@ Modern IDEs automatically detect `CMakePresets.json`:
 
 ## Features
 
-- TCP socket server (port 8080)
-- HTTP/1.1 support
-- Embedded HTML resources via CMake
-- No-cache headers for development
-- No external dependencies
+- **TCP socket server** on port 8080
+- **HTTP/1.1** request parsing with POST support
+- **SQLite authentication** - user registration and login
+- **Modern auth UI** with client-side JavaScript
+- **Embedded HTML** resources via CMake
+- **Professional structure** - src/include separation
+- **Route handling** - /register, /login, / endpoints
+- **JSON responses** for API endpoints
+
+## API Endpoints
+
+- `GET /` - Auth UI (login/register form)
+- `POST /register` - Create new user
+  - Body: `username=USER&password=PASS`
+  - Returns: JSON with success/error
+- `POST /login` - Authenticate user
+  - Body: `username=USER&password=PASS`
+  - Returns: JSON with success/error
+
+## Testing
+
+The project uses **Unity** testing framework with comprehensive test coverage:
+
+- **HTTP Parser Tests** (5 tests)
+  - GET/POST request parsing
+  - URL-encoded POST data parsing
+  - Header retrieval (case-insensitive)
+
+- **Database Tests** (7 tests)
+  - User creation and validation
+  - Duplicate user handling
+  - Password verification
+  - Multi-user scenarios
+
+```bash
+# Run all tests
+cd build && ctest
+
+# Run specific test
+./build/test_http
+./build/test_db
+
+# Run with verbose output
+ctest --output-on-failure
+```
 
 ## Project Structure
 
 ```
 .
-├── CMakeLists.txt       # Build configuration
-├── CMakePresets.json    # Professional presets
+├── CMakeLists.txt       # Build configuration with SQLite + Testing
+├── CMakePresets.json    # Professional presets (dev/release)
 ├── src/
-│   ├── main.c           # Server implementation
-│   └── static.h.in      # CMake template for embedding resources
-├── include/             # Public headers (currently empty)
+│   ├── main.c           # Server and routing
+│   ├── db.c             # SQLite database operations
+│   ├── http.c           # HTTP request parser
+│   └── static.h.in      # CMake template for embedding HTML
+├── include/
+│   ├── db.h             # Database API
+│   └── http.h           # HTTP parser API
+├── tests/
+│   ├── test_http.c      # HTTP parser unit tests
+│   └── test_db.c        # Database unit tests
+├── vendor/
+│   └── unity/           # Unity test framework (submodule)
 ├── static/
-│   └── index.html       # HTML landing page
-└── build/
-    ├── bin/             # Compiled executables
-    └── include/         # Generated headers
+│   ├── index.html       # Auth UI
+│   └── dashboard.html   # Protected dashboard
+├── build/
+│   ├── bin/             # c-http-server executable
+│   ├── test_http        # HTTP test runner
+│   ├── test_db          # Database test runner
+│   └── include/         # Generated headers
+└── server.db            # SQLite database (auto-created)
 ```

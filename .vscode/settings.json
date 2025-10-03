@@ -3,5 +3,7 @@
     "*.dbclient-js": "javascript",
     "*.jcfg": "editorconfig",
     "static.h": "c"
-  }
+  },
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "cmake.buildDirectory": "${workspaceFolder}/build"
 }

@@ -9,10 +9,20 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
 
-# Read HTML file and convert to C string
+# Find SQLite3
+find_package(SQLite3 REQUIRED)
+if(NOT SQLite3_FOUND)
+    message(FATAL_ERROR "SQLite3 library not found")
+endif()
+
+# Read HTML files and convert to C strings
 file(READ ${CMAKE_SOURCE_DIR}/static/index.html HTML_CONTENT)
 string(REPLACE "\"" "\\\"" HTML_CONTENT "${HTML_CONTENT}")
 string(REPLACE "\n" "\\n\"\n    \"" HTML_CONTENT "${HTML_CONTENT}")
+
+file(READ ${CMAKE_SOURCE_DIR}/static/dashboard.html DASHBOARD_CONTENT)
+string(REPLACE "\"" "\\\"" DASHBOARD_CONTENT "${DASHBOARD_CONTENT}")
+string(REPLACE "\n" "\\n\"\n    \"" DASHBOARD_CONTENT "${DASHBOARD_CONTENT}")
 
 # Configure the header file
 configure_file(
@@ -24,15 +34,59 @@ configure_file(
 # Add the executable
 add_executable(${PROJECT_NAME}
     src/main.c
+    src/db.c
+    src/http.c
 )
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_SOURCE_DIR}/include
+    ${SQLite3_INCLUDE_DIRS}
+)
+
+# Link libraries
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    ${SQLite3_LIBRARIES}
 )
 
 # Set output directory
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+# Testing
+enable_testing()
+
+# Unity test framework
+add_library(unity STATIC
+    vendor/unity/src/unity.c
+)
+target_include_directories(unity PUBLIC
+    vendor/unity/src
+)
+
+# Test executables
+add_executable(test_http tests/test_http.c src/http.c)
+target_include_directories(test_http PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(test_http PRIVATE unity)
+
+add_executable(test_db tests/test_db.c src/db.c)
+target_include_directories(test_db PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${SQLite3_INCLUDE_DIRS}
+)
+target_link_libraries(test_db PRIVATE unity ${SQLite3_LIBRARIES})
+
+# Add tests
+add_test(NAME HTTPParserTests COMMAND test_http)
+add_test(NAME DatabaseTests COMMAND test_db)
+
+# Test runner target
+add_custom_target(run_tests
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS test_http test_db
+    COMMENT "Running all tests"
 )

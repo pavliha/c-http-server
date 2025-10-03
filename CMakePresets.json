@@ -17,6 +17,17 @@
       }
     },
     {
+      "name": "coverage",
+      "displayName": "Coverage",
+      "description": "Build with code coverage instrumentation",
+      "binaryDir": "${sourceDir}/build-coverage",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS": "-O0 -g --coverage",
+        "CMAKE_EXE_LINKER_FLAGS": "--coverage"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "description": "Optimized release build",
@@ -31,6 +42,11 @@
       "name": "dev",
       "displayName": "Development Build",
       "configurePreset": "dev"
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage Build",
+      "configurePreset": "coverage"
     },
     {
       "name": "release",
