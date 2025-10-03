@@ -65,17 +65,26 @@ static int validate_credentials(const char *username, const char *password) {
   return 0;
 }
 
-void handle_index(int client_fd, const http_request_t *request) {
+bool logging_middleware(int client_fd, const http_request_t *request) {
+  (void) client_fd; // Unused
+  printf("[%s] %s\n", request->method, request->path);
+  return true; // Continue to next middleware/handler
+}
+
+void handle_index(int client_fd, const http_request_t *request, const route_params_t *params) {
   (void) request; // Unused
+  (void) params;  // Unused
   send_response(client_fd, "200 OK", "text/html", embedded_html);
 }
 
-void handle_dashboard(int client_fd, const http_request_t *request) {
+void handle_dashboard(int client_fd, const http_request_t *request, const route_params_t *params) {
   (void) request; // Unused
+  (void) params;  // Unused
   send_response(client_fd, "200 OK", "text/html", embedded_dashboard);
 }
 
-void handle_register(int client_fd, const http_request_t *request) {
+void handle_register(int client_fd, const http_request_t *request, const route_params_t *params) {
+  (void) params; // Unused
   char username[256] = {0};
   char password[256] = {0};
 
@@ -105,7 +114,8 @@ void handle_register(int client_fd, const http_request_t *request) {
   }
 }
 
-void handle_login(int client_fd, const http_request_t *request) {
+void handle_login(int client_fd, const http_request_t *request, const route_params_t *params) {
+  (void) params; // Unused
   char username[256] = {0};
   char password[256] = {0};
 

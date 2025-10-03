@@ -35,6 +35,11 @@ static void signal_handler(int signum) {
 
 static void setup_routes(void) {
   router_init();
+
+  // Register global logging middleware
+  router_use_global_middleware(logging_middleware);
+
+  // Register routes
   router_register("GET", "/", handle_index);
   router_register("GET", "/dashboard", handle_dashboard);
   router_register("POST", "/register", handle_register);
