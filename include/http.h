@@ -14,6 +14,7 @@ typedef struct {
   int header_count;
   char *body;
   int body_length;
+  char client_ip[46]; // IPv6 max length
 } http_request_t;
 
 int http_parse_request(const char *raw_request, http_request_t *request);

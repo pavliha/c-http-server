@@ -1,3 +1,4 @@
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
@@ -55,7 +56,6 @@ static void setup_routes(void) {
 int main() {
   int server_fd, client_fd;
   struct sockaddr_in address;
-  int addrlen              = sizeof(address);
   char buffer[BUFFER_SIZE] = {0};
 
   // Setup signal handlers
@@ -115,13 +115,19 @@ int main() {
   // Main server loop
   while (!g_shutdown_requested) {
     // Accept connection
-    if ((client_fd = accept(server_fd, (struct sockaddr *) &address, (socklen_t *) &addrlen)) < 0) {
+    struct sockaddr_in client_addr;
+    socklen_t client_addrlen = sizeof(client_addr);
+    if ((client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &client_addrlen)) < 0) {
       if (g_shutdown_requested) {
         break;
       }
       perror("Accept failed");
       continue;
     }
+
+    // Extract client IP address
+    char client_ip[46] = {0};
+    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
 
     // Read request
     ssize_t bytes_read = read(client_fd, buffer, BUFFER_SIZE - 1);
@@ -155,6 +161,9 @@ int main() {
       memset(buffer, 0, BUFFER_SIZE);
       continue;
     }
+
+    // Set client IP in request
+    strncpy(req.client_ip, client_ip, sizeof(req.client_ip) - 1);
 
     // Handle route
     router_handle(client_fd, &req);

@@ -179,8 +179,8 @@ void handle_logout(int client_fd, const http_request_t *request, const route_par
 void handle_login(int client_fd, const http_request_t *request, const route_params_t *params) {
   (void) params; // Unused
 
-  // Rate limiting check (using a placeholder IP - in real implementation, extract from socket)
-  if (!rate_limit_check("127.0.0.1")) {
+  // Rate limiting check using real client IP
+  if (!rate_limit_check(request->client_ip)) {
     send_response(
         client_fd, "429 Too Many Requests", "application/json",
         "{\"success\":false,\"message\":\"Too many login attempts. Please try again later\"}");
