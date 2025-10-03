@@ -129,14 +129,14 @@ ctest --output-on-failure
 
 **Code Coverage (gcov/lcov)**
 ```bash
-./coverage.sh
+./scripts/coverage.sh
 # Opens: build-coverage/coverage-html/index.html
 ```
 
 **Memory Leak Detection (Valgrind)**
 ```bash
 # Requires: brew install valgrind
-./valgrind.sh
+./scripts/valgrind.sh
 ```
 
 **AddressSanitizer (Memory errors)**
@@ -156,7 +156,7 @@ cd build-ubsan && ctest
 **Static Analysis**
 ```bash
 # Requires: brew install cppcheck
-./analyze.sh
+./scripts/analyze.sh
 ```
 
 ## Project Structure
