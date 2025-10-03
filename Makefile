@@ -1,17 +1,18 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11
-TARGET = main
+TARGET = build/main
 SRC = main.c
 
 all: $(TARGET)
 
 $(TARGET): $(SRC)
+	@mkdir -p build
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 clean:
-	rm -f $(TARGET)
+	rm -rf build
 
 run: clean all
-	./$(TARGET)
+	$(TARGET)
 
 .PHONY: all clean run
