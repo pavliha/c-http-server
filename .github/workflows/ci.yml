@@ -59,7 +59,7 @@ jobs:
       run: |
         cd build-coverage
         lcov --capture --directory . --output-file coverage.info
-        lcov --remove coverage.info '*/vendor/*' '*/tests/*' --output-file coverage.info --ignore-errors unused
+        lcov --remove coverage.info '*/vendor/*' '*/tests/*' --output-file coverage.info
         lcov --list coverage.info
 
     - name: Upload coverage to Codecov
