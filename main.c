@@ -5,22 +5,17 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "static.h"
+
 #define PORT 8080
 #define BUFFER_SIZE 1024
-
-const char *http_response =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/html\r\n"
-    "Connection: close\r\n"
-    "\r\n"
-    "<!DOCTYPE html>\n"
-    "<html>\n"
-    "<head><title>C HTTP Server</title></head>\n"
-    "<body>\n"
-    "<h1>Hello from C HTTP Server!</h1>\n"
-    "<p>This is a basic HTTP server written in C.</p>\n"
-    "</body>\n"
-    "</html>\n";
+#define HTTP_HEADER "HTTP/1.1 200 OK\r\n" \
+                    "Content-Type: text/html\r\n" \
+                    "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n" \
+                    "Pragma: no-cache\r\n" \
+                    "Expires: 0\r\n" \
+                    "Connection: close\r\n" \
+                    "\r\n"
 
 int main() {
   int server_fd, client_fd;
@@ -72,8 +67,11 @@ int main() {
     read(client_fd, buffer, BUFFER_SIZE);
     printf("Request received:\n%s\n", buffer);
 
-    // Send response
-    ssize_t bytes_written = write(client_fd, http_response, strlen(http_response));
+    // Send HTTP header
+    write(client_fd, HTTP_HEADER, strlen(HTTP_HEADER));
+
+    // Send HTML body from embedded file
+    ssize_t bytes_written = write(client_fd, embedded_html, embedded_html_len);
     printf("Sent %zd bytes\n", bytes_written);
 
     // Shutdown write side to signal we're done sending
