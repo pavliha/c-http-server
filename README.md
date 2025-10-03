@@ -1,12 +1,10 @@
 # C HTTP Server
 
-[![CI](https://github.com/USERNAME/c-http-server/workflows/CI/badge.svg)](https://github.com/USERNAME/c-http-server/actions)
-[![codecov](https://codecov.io/gh/USERNAME/c-http-server/branch/master/graph/badge.svg)](https://codecov.io/gh/USERNAME/c-http-server)
+[![CI](https://github.com/pavliha/c-http-server/workflows/CI/badge.svg)](https://github.com/pavliha/c-http-server/actions)
+[![codecov](https://codecov.io/gh/pavliha/c-http-server/branch/master/graph/badge.svg)](https://codecov.io/gh/pavliha/c-http-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A lightweight HTTP server built from scratch in C using TCP sockets.
-
-> **Note:** Replace `USERNAME` with your GitHub username in the badges above
 
 ## Quick Start
 
