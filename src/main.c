@@ -5,26 +5,26 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "static.h"
 #include "db.h"
 #include "http.h"
+#include "static.h"
 
 #define PORT 8080
 #define BUFFER_SIZE 4096
-#define DB_PATH "server.db"
+#define DB_PATH "data/server.db"
 
 void send_response(int client_fd, const char *status, const char *content_type, const char *body) {
   char response[BUFFER_SIZE];
   snprintf(response, sizeof(response),
-    "HTTP/1.1 %s\r\n"
-    "Content-Type: %s\r\n"
-    "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
-    "Pragma: no-cache\r\n"
-    "Expires: 0\r\n"
-    "Connection: close\r\n"
-    "\r\n"
-    "%s",
-    status, content_type, body);
+           "HTTP/1.1 %s\r\n"
+           "Content-Type: %s\r\n"
+           "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+           "Pragma: no-cache\r\n"
+           "Expires: 0\r\n"
+           "Connection: close\r\n"
+           "\r\n"
+           "%s",
+           status, content_type, body);
 
   write(client_fd, response, strlen(response));
 }
@@ -32,7 +32,7 @@ void send_response(int client_fd, const char *status, const char *content_type, 
 int main() {
   int server_fd, client_fd;
   struct sockaddr_in address;
-  int addrlen = sizeof(address);
+  int addrlen              = sizeof(address);
   char buffer[BUFFER_SIZE] = {0};
 
   // Initialize database
@@ -56,11 +56,11 @@ int main() {
   }
 
   // Bind to port
-  address.sin_family = AF_INET;
+  address.sin_family      = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(PORT);
+  address.sin_port        = htons(PORT);
 
-  if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+  if (bind(server_fd, (struct sockaddr *) &address, sizeof(address)) < 0) {
     perror("Bind failed");
     exit(EXIT_FAILURE);
   }
@@ -76,8 +76,7 @@ int main() {
   // Main server loop
   while (1) {
     // Accept connection
-    if ((client_fd = accept(server_fd, (struct sockaddr *)&address,
-                            (socklen_t *)&addrlen)) < 0) {
+    if ((client_fd = accept(server_fd, (struct sockaddr *) &address, (socklen_t *) &addrlen)) < 0) {
       perror("Accept failed");
       continue;
     }
@@ -106,49 +105,43 @@ int main() {
       char username[256] = {0};
       char password[256] = {0};
 
-      if (req.body &&
-          http_parse_post_data(req.body, "username", username, sizeof(username)) == 0 &&
+      if (req.body && http_parse_post_data(req.body, "username", username, sizeof(username)) == 0 &&
           http_parse_post_data(req.body, "password", password, sizeof(password)) == 0) {
 
         if (db_create_user(username, password) == 0) {
           send_response(client_fd, "200 OK", "application/json",
-            "{\"success\":true,\"message\":\"User registered successfully\"}");
+                        "{\"success\":true,\"message\":\"User registered successfully\"}");
         } else {
           send_response(client_fd, "400 Bad Request", "application/json",
-            "{\"success\":false,\"message\":\"Username already exists\"}");
+                        "{\"success\":false,\"message\":\"Username already exists\"}");
         }
       } else {
         send_response(client_fd, "400 Bad Request", "application/json",
-          "{\"success\":false,\"message\":\"Missing username or password\"}");
+                      "{\"success\":false,\"message\":\"Missing username or password\"}");
       }
-    }
-    else if (strcmp(req.method, "POST") == 0 && strcmp(req.path, "/login") == 0) {
+    } else if (strcmp(req.method, "POST") == 0 && strcmp(req.path, "/login") == 0) {
       char username[256] = {0};
       char password[256] = {0};
 
-      if (req.body &&
-          http_parse_post_data(req.body, "username", username, sizeof(username)) == 0 &&
+      if (req.body && http_parse_post_data(req.body, "username", username, sizeof(username)) == 0 &&
           http_parse_post_data(req.body, "password", password, sizeof(password)) == 0) {
 
         if (db_verify_user(username, password) == 0) {
           send_response(client_fd, "200 OK", "application/json",
-            "{\"success\":true,\"message\":\"Login successful\"}");
+                        "{\"success\":true,\"message\":\"Login successful\"}");
         } else {
           send_response(client_fd, "401 Unauthorized", "application/json",
-            "{\"success\":false,\"message\":\"Invalid username or password\"}");
+                        "{\"success\":false,\"message\":\"Invalid username or password\"}");
         }
       } else {
         send_response(client_fd, "400 Bad Request", "application/json",
-          "{\"success\":false,\"message\":\"Missing username or password\"}");
+                      "{\"success\":false,\"message\":\"Missing username or password\"}");
       }
-    }
-    else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/") == 0) {
+    } else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/") == 0) {
       send_response(client_fd, "200 OK", "text/html", embedded_html);
-    }
-    else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/dashboard") == 0) {
+    } else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/dashboard") == 0) {
       send_response(client_fd, "200 OK", "text/html", embedded_dashboard);
-    }
-    else {
+    } else {
       send_response(client_fd, "404 Not Found", "text/plain", "Not Found");
     }
 

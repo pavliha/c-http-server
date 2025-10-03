@@ -22,6 +22,7 @@ repos:
           - --enable=warning,performance,portability
           - --std=c11
           - --suppress=missingIncludeSystem
+          - --suppress=normalCheckLevelMaxBranches
           - --error-exitcode=1
           - -I
           - include/
