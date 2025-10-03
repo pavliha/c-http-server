@@ -1,4 +1,5 @@
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,24 @@
 #define BUFFER_SIZE 4096
 #define DB_PATH "data/server.db"
 
+// Global state for cleanup
+static int g_server_fd                            = -1;
+static volatile sig_atomic_t g_shutdown_requested = 0;
+
+static void cleanup(void) {
+  if (g_server_fd >= 0) {
+    close(g_server_fd);
+    g_server_fd = -1;
+  }
+  db_close();
+  printf("\nServer shut down gracefully\n");
+}
+
+static void signal_handler(int signum) {
+  (void) signum;
+  g_shutdown_requested = 1;
+}
+
 static void setup_routes(void) {
   router_init();
   router_register("GET", "/", handle_index);
@@ -28,6 +47,13 @@ int main() {
   int addrlen              = sizeof(address);
   char buffer[BUFFER_SIZE] = {0};
 
+  // Setup signal handlers
+  signal(SIGINT, signal_handler);
+  signal(SIGTERM, signal_handler);
+
+  // Register cleanup function
+  atexit(cleanup);
+
   // Initialize database
   if (db_init(DB_PATH) != 0) {
     fprintf(stderr, "Failed to initialize database\n");
@@ -40,9 +66,9 @@ int main() {
   // Create socket
   if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
     perror("Socket failed");
-    db_close();
     exit(EXIT_FAILURE);
   }
+  g_server_fd = server_fd;
 
   // Allow socket reuse
   int opt = 1;
@@ -68,18 +94,28 @@ int main() {
   }
 
   printf("Server listening on port %d...\n", PORT);
+  printf("Press Ctrl+C to stop\n");
 
   // Main server loop
-  while (1) {
+  while (!g_shutdown_requested) {
     // Accept connection
     if ((client_fd = accept(server_fd, (struct sockaddr *) &address, (socklen_t *) &addrlen)) < 0) {
+      if (g_shutdown_requested) {
+        break;
+      }
       perror("Accept failed");
       continue;
     }
 
     // Read request
     ssize_t bytes_read = read(client_fd, buffer, BUFFER_SIZE - 1);
-    if (bytes_read <= 0) {
+    if (bytes_read < 0) {
+      perror("Read failed");
+      close(client_fd);
+      continue;
+    }
+    if (bytes_read == 0) {
+      // Client closed connection
       close(client_fd);
       continue;
     }
@@ -95,7 +131,10 @@ int main() {
                                 "Connection: close\r\n"
                                 "\r\n"
                                 "Bad Request";
-      write(client_fd, bad_request, strlen(bad_request));
+      ssize_t written         = write(client_fd, bad_request, strlen(bad_request));
+      if (written < 0) {
+        perror("Write failed");
+      }
       close(client_fd);
       memset(buffer, 0, BUFFER_SIZE);
       continue;
@@ -106,7 +145,9 @@ int main() {
     http_free_request(&req);
 
     // Shutdown write side to signal we're done sending
-    shutdown(client_fd, SHUT_WR);
+    if (shutdown(client_fd, SHUT_WR) < 0) {
+      perror("Shutdown failed");
+    }
 
     // Close connection
     close(client_fd);
@@ -115,7 +156,5 @@ int main() {
     memset(buffer, 0, BUFFER_SIZE);
   }
 
-  close(server_fd);
-  db_close();
   return 0;
 }
