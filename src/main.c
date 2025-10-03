@@ -6,27 +6,20 @@
 #include <unistd.h>
 
 #include "db.h"
+#include "handlers.h"
 #include "http.h"
-#include "static.h"
+#include "router.h"
 
 #define PORT 8080
 #define BUFFER_SIZE 4096
 #define DB_PATH "data/server.db"
 
-void send_response(int client_fd, const char *status, const char *content_type, const char *body) {
-  char response[BUFFER_SIZE];
-  snprintf(response, sizeof(response),
-           "HTTP/1.1 %s\r\n"
-           "Content-Type: %s\r\n"
-           "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
-           "Pragma: no-cache\r\n"
-           "Expires: 0\r\n"
-           "Connection: close\r\n"
-           "\r\n"
-           "%s",
-           status, content_type, body);
-
-  write(client_fd, response, strlen(response));
+static void setup_routes(void) {
+  router_init();
+  router_register("GET", "/", handle_index);
+  router_register("GET", "/dashboard", handle_dashboard);
+  router_register("POST", "/register", handle_register);
+  router_register("POST", "/login", handle_login);
 }
 
 int main() {
@@ -40,6 +33,9 @@ int main() {
     fprintf(stderr, "Failed to initialize database\n");
     exit(EXIT_FAILURE);
   }
+
+  // Setup routes
+  setup_routes();
 
   // Create socket
   if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
@@ -94,57 +90,19 @@ int main() {
     // Parse HTTP request
     http_request_t req;
     if (http_parse_request(buffer, &req) != 0) {
-      send_response(client_fd, "400 Bad Request", "text/plain", "Bad Request");
+      const char *bad_request = "HTTP/1.1 400 Bad Request\r\n"
+                                "Content-Type: text/plain\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "Bad Request";
+      write(client_fd, bad_request, strlen(bad_request));
       close(client_fd);
       memset(buffer, 0, BUFFER_SIZE);
       continue;
     }
 
-    // Route handling
-    if (strcmp(req.method, "POST") == 0 && strcmp(req.path, "/register") == 0) {
-      char username[256] = {0};
-      char password[256] = {0};
-
-      if (req.body && http_parse_post_data(req.body, "username", username, sizeof(username)) == 0 &&
-          http_parse_post_data(req.body, "password", password, sizeof(password)) == 0) {
-
-        if (db_create_user(username, password) == 0) {
-          send_response(client_fd, "200 OK", "application/json",
-                        "{\"success\":true,\"message\":\"User registered successfully\"}");
-        } else {
-          send_response(client_fd, "400 Bad Request", "application/json",
-                        "{\"success\":false,\"message\":\"Username already exists\"}");
-        }
-      } else {
-        send_response(client_fd, "400 Bad Request", "application/json",
-                      "{\"success\":false,\"message\":\"Missing username or password\"}");
-      }
-    } else if (strcmp(req.method, "POST") == 0 && strcmp(req.path, "/login") == 0) {
-      char username[256] = {0};
-      char password[256] = {0};
-
-      if (req.body && http_parse_post_data(req.body, "username", username, sizeof(username)) == 0 &&
-          http_parse_post_data(req.body, "password", password, sizeof(password)) == 0) {
-
-        if (db_verify_user(username, password) == 0) {
-          send_response(client_fd, "200 OK", "application/json",
-                        "{\"success\":true,\"message\":\"Login successful\"}");
-        } else {
-          send_response(client_fd, "401 Unauthorized", "application/json",
-                        "{\"success\":false,\"message\":\"Invalid username or password\"}");
-        }
-      } else {
-        send_response(client_fd, "400 Bad Request", "application/json",
-                      "{\"success\":false,\"message\":\"Missing username or password\"}");
-      }
-    } else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/") == 0) {
-      send_response(client_fd, "200 OK", "text/html", embedded_html);
-    } else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/dashboard") == 0) {
-      send_response(client_fd, "200 OK", "text/html", embedded_dashboard);
-    } else {
-      send_response(client_fd, "404 Not Found", "text/plain", "Not Found");
-    }
-
+    // Handle route
+    router_handle(client_fd, &req);
     http_free_request(&req);
 
     // Shutdown write side to signal we're done sending

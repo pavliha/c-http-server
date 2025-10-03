@@ -36,6 +36,8 @@ add_executable(${PROJECT_NAME}
     src/main.c
     src/db.c
     src/http.c
+    src/router.c
+    src/handlers.c
 )
 
 # Include directories
