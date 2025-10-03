@@ -28,6 +28,28 @@
       }
     },
     {
+      "name": "asan",
+      "displayName": "AddressSanitizer",
+      "description": "Build with AddressSanitizer for memory error detection",
+      "binaryDir": "${sourceDir}/build-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS": "-O1 -g -fsanitize=address -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address"
+      }
+    },
+    {
+      "name": "ubsan",
+      "displayName": "UndefinedBehaviorSanitizer",
+      "description": "Build with UBSan for undefined behavior detection",
+      "binaryDir": "${sourceDir}/build-ubsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS": "-O1 -g -fsanitize=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=undefined"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "description": "Optimized release build",
@@ -47,6 +69,16 @@
       "name": "coverage",
       "displayName": "Coverage Build",
       "configurePreset": "coverage"
+    },
+    {
+      "name": "asan",
+      "displayName": "AddressSanitizer Build",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "ubsan",
+      "displayName": "UBSan Build",
+      "configurePreset": "ubsan"
     },
     {
       "name": "release",

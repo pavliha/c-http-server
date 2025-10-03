@@ -104,6 +104,40 @@ cd build && ctest
 ctest --output-on-failure
 ```
 
+### Advanced Testing Tools
+
+**Code Coverage (gcov/lcov)**
+```bash
+./coverage.sh
+# Opens: build-coverage/coverage-html/index.html
+```
+
+**Memory Leak Detection (Valgrind)**
+```bash
+# Requires: brew install valgrind
+./valgrind.sh
+```
+
+**AddressSanitizer (Memory errors)**
+```bash
+cmake --preset asan
+cmake --build --preset asan
+cd build-asan && ctest
+```
+
+**UndefinedBehaviorSanitizer**
+```bash
+cmake --preset ubsan
+cmake --build --preset ubsan
+cd build-ubsan && ctest
+```
+
+**Static Analysis**
+```bash
+# Requires: brew install cppcheck
+./analyze.sh
+```
+
 ## Project Structure
 
 ```
