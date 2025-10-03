@@ -10,6 +10,7 @@
 #include "handlers.h"
 #include "http.h"
 #include "router.h"
+#include "security.h"
 
 #define PORT 8080
 #define BUFFER_SIZE 4096
@@ -41,7 +42,11 @@ static void setup_routes(void) {
 
   // Register routes
   router_register("GET", "/", handle_index);
-  router_register("GET", "/dashboard", handle_dashboard);
+
+  // Protected route - requires authentication
+  middleware_t auth_middlewares[] = {auth_middleware};
+  router_register_with_middleware("GET", "/dashboard", handle_dashboard, auth_middlewares, 1);
+
   router_register("POST", "/register", handle_register);
   router_register("POST", "/login", handle_login);
 }
@@ -64,6 +69,11 @@ int main() {
     fprintf(stderr, "Failed to initialize database\n");
     exit(EXIT_FAILURE);
   }
+
+  // Initialize security modules
+  session_init();
+  rate_limit_init();
+  csrf_init();
 
   // Setup routes
   setup_routes();

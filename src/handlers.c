@@ -1,6 +1,7 @@
 #include "handlers.h"
 #include "db.h"
 #include "http.h"
+#include "security.h"
 #include "static.h"
 #include <stdio.h>
 #include <string.h>
@@ -71,6 +72,47 @@ bool logging_middleware(int client_fd, const http_request_t *request) {
   return true; // Continue to next middleware/handler
 }
 
+bool auth_middleware(int client_fd, const http_request_t *request) {
+  // Extract token from Authorization header
+  const char *auth_header = http_get_header(request, "Authorization");
+
+  if (!auth_header) {
+    const char *response = "HTTP/1.1 401 Unauthorized\r\n"
+                           "Content-Type: application/json\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "{\"success\":false,\"message\":\"No authorization token provided\"}";
+    write(client_fd, response, strlen(response));
+    return false;
+  }
+
+  // Parse "Bearer <token>"
+  char token[SESSION_TOKEN_LENGTH + 1] = {0};
+  if (sscanf(auth_header, "Bearer %32s", token) != 1) {
+    const char *response = "HTTP/1.1 401 Unauthorized\r\n"
+                           "Content-Type: application/json\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "{\"success\":false,\"message\":\"Invalid authorization format\"}";
+    write(client_fd, response, strlen(response));
+    return false;
+  }
+
+  // Validate session
+  char username[65];
+  if (!session_validate(token, username, sizeof(username))) {
+    const char *response = "HTTP/1.1 401 Unauthorized\r\n"
+                           "Content-Type: application/json\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "{\"success\":false,\"message\":\"Invalid or expired session\"}";
+    write(client_fd, response, strlen(response));
+    return false;
+  }
+
+  return true; // Authenticated, continue
+}
+
 void handle_index(int client_fd, const http_request_t *request, const route_params_t *params) {
   (void) request; // Unused
   (void) params;  // Unused
@@ -116,6 +158,15 @@ void handle_register(int client_fd, const http_request_t *request, const route_p
 
 void handle_login(int client_fd, const http_request_t *request, const route_params_t *params) {
   (void) params; // Unused
+
+  // Rate limiting check (using a placeholder IP - in real implementation, extract from socket)
+  if (!rate_limit_check("127.0.0.1")) {
+    send_response(
+        client_fd, "429 Too Many Requests", "application/json",
+        "{\"success\":false,\"message\":\"Too many login attempts. Please try again later\"}");
+    return;
+  }
+
   char username[256] = {0};
   char password[256] = {0};
 
@@ -135,8 +186,26 @@ void handle_login(int client_fd, const http_request_t *request, const route_para
   }
 
   if (db_verify_user(username, password) == 0) {
-    send_response(client_fd, "200 OK", "application/json",
-                  "{\"success\":true,\"message\":\"Login successful\"}");
+    // Create session
+    const char *token = session_create(username);
+    if (token) {
+      // Generate CSRF token
+      const char *csrf_token = csrf_generate(token);
+      if (csrf_token) {
+        char response[768];
+        snprintf(response, sizeof(response),
+                 "{\"success\":true,\"message\":\"Login successful\",\"token\":\"%s\",\"csrf_"
+                 "token\":\"%s\"}",
+                 token, csrf_token);
+        send_response(client_fd, "200 OK", "application/json", response);
+      } else {
+        send_response(client_fd, "500 Internal Server Error", "application/json",
+                      "{\"success\":false,\"message\":\"Failed to create CSRF token\"}");
+      }
+    } else {
+      send_response(client_fd, "500 Internal Server Error", "application/json",
+                    "{\"success\":false,\"message\":\"Failed to create session\"}");
+    }
   } else {
     send_response(client_fd, "401 Unauthorized", "application/json",
                   "{\"success\":false,\"message\":\"Invalid username or password\"}");

@@ -1,7 +1,8 @@
 #include "db.h"
+#include "security.h"
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 static sqlite3 *db = NULL;
 
@@ -13,16 +14,15 @@ int db_init(const char *db_path) {
   }
 
   // Create users table
-  const char *sql =
-    "CREATE TABLE IF NOT EXISTS users ("
-    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
-    "  username TEXT UNIQUE NOT NULL,"
-    "  password TEXT NOT NULL,"
-    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
-    ");";
+  const char *sql = "CREATE TABLE IF NOT EXISTS users ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  username TEXT UNIQUE NOT NULL,"
+                    "  password TEXT NOT NULL,"
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+                    ");";
 
   char *err_msg = NULL;
-  rc = sqlite3_exec(db, sql, NULL, NULL, &err_msg);
+  rc            = sqlite3_exec(db, sql, NULL, NULL, &err_msg);
   if (rc != SQLITE_OK) {
     fprintf(stderr, "SQL error: %s\n", err_msg);
     sqlite3_free(err_msg);
@@ -79,9 +79,9 @@ int db_verify_user(const char *username, const char *password) {
   rc = sqlite3_step(stmt);
   if (rc == SQLITE_ROW) {
     const unsigned char *stored_password = sqlite3_column_text(stmt, 0);
-    int match = strcmp(password, (const char *)stored_password) == 0;
+    int match = secure_compare(password, (const char *) stored_password, 0);
     sqlite3_finalize(stmt);
-    return match ? 0 : -1;
+    return match;
   }
 
   sqlite3_finalize(stmt);

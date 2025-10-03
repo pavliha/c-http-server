@@ -38,6 +38,7 @@ add_executable(${PROJECT_NAME}
     src/http.c
     src/router.c
     src/handlers.c
+    src/security.c
 )
 
 # Include directories
@@ -75,7 +76,7 @@ target_include_directories(test_http PRIVATE
 )
 target_link_libraries(test_http PRIVATE unity)
 
-add_executable(test_db tests/test_db.c src/db.c)
+add_executable(test_db tests/test_db.c src/db.c src/security.c)
 target_include_directories(test_db PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${SQLite3_INCLUDE_DIRS}
