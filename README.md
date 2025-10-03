@@ -8,14 +8,14 @@ A lightweight HTTP server built from scratch in C using TCP sockets.
 ```bash
 cmake --preset dev
 cmake --build --preset dev
-./build/main
+./build/bin/c-http-server
 ```
 
 **Release build:**
 ```bash
 cmake --preset release
 cmake --build --preset release
-./build-release/main
+./build-release/bin/c-http-server
 ```
 
 Then open http://localhost:8080 in your browser.
@@ -65,8 +65,13 @@ Modern IDEs automatically detect `CMakePresets.json`:
 .
 ├── CMakeLists.txt       # Build configuration
 ├── CMakePresets.json    # Professional presets
-├── main.c               # Server implementation
+├── src/
+│   ├── main.c           # Server implementation
+│   └── static.h.in      # CMake template for embedding resources
+├── include/             # Public headers (currently empty)
 ├── static/
 │   └── index.html       # HTML landing page
-└── static.h.in          # CMake template for embedding resources
+└── build/
+    ├── bin/             # Compiled executables
+    └── include/         # Generated headers
 ```
