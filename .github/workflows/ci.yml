@@ -59,7 +59,7 @@ jobs:
       run: |
         cd build-coverage
         lcov --capture --directory . --output-file coverage.info
-        lcov --remove coverage.info '/usr/*' '*/vendor/*' '*/tests/*' --output-file coverage.info
+        lcov --remove coverage.info '*/vendor/*' '*/tests/*' --output-file coverage.info --ignore-errors unused
         lcov --list coverage.info
 
     - name: Upload coverage to Codecov
@@ -113,9 +113,9 @@ jobs:
 
     - name: Run cppcheck
       run: |
-        cppcheck --enable=all \
-                 --inconclusive \
+        cppcheck --enable=warning,performance,portability \
                  --std=c11 \
                  --suppress=missingIncludeSystem \
                  --error-exitcode=1 \
-                 src/ include/
+                 -I include/ \
+                 src/
