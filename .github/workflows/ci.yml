@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake libsqlite3-dev
+
+    - name: Configure
+      run: cmake --preset dev
+
+    - name: Build
+      run: cmake --build --preset dev
+
+    - name: Run tests
+      run: cd build && ctest --output-on-failure
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake libsqlite3-dev lcov
+
+    - name: Configure with coverage
+      run: cmake --preset coverage
+
+    - name: Build
+      run: cmake --build --preset coverage
+
+    - name: Run tests
+      run: cd build-coverage && ctest --output-on-failure
+
+    - name: Generate coverage report
+      run: |
+        cd build-coverage
+        lcov --capture --directory . --output-file coverage.info
+        lcov --remove coverage.info '/usr/*' '*/vendor/*' '*/tests/*' --output-file coverage.info
+        lcov --list coverage.info
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./build-coverage/coverage.info
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+  sanitizers:
+    name: Sanitizer Checks
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        sanitizer: [asan, ubsan]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake libsqlite3-dev
+
+    - name: Configure with ${{ matrix.sanitizer }}
+      run: cmake --preset ${{ matrix.sanitizer }}
+
+    - name: Build
+      run: cmake --build --preset ${{ matrix.sanitizer }}
+
+    - name: Run tests
+      run: cd build-${{ matrix.sanitizer }} && ctest --output-on-failure
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake libsqlite3-dev cppcheck clang-tools
+
+    - name: Run cppcheck
+      run: |
+        cppcheck --enable=all \
+                 --inconclusive \
+                 --std=c11 \
+                 --suppress=missingIncludeSystem \
+                 --error-exitcode=1 \
+                 src/ include/

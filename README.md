@@ -1,6 +1,12 @@
 # C HTTP Server
 
+[![CI](https://github.com/USERNAME/c-http-server/workflows/CI/badge.svg)](https://github.com/USERNAME/c-http-server/actions)
+[![codecov](https://codecov.io/gh/USERNAME/c-http-server/branch/master/graph/badge.svg)](https://codecov.io/gh/USERNAME/c-http-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A lightweight HTTP server built from scratch in C using TCP sockets.
+
+> **Note:** Replace `USERNAME` with your GitHub username in the badges above
 
 ## Quick Start
 
@@ -24,6 +30,17 @@ cmake --build --preset release
 ```
 
 Then open http://localhost:8080 in your browser.
+
+## Continuous Integration
+
+The project uses **GitHub Actions** for automated testing on every push:
+
+- ✅ **Build & Test** - Runs all unit tests
+- ✅ **Code Coverage** - Generates coverage reports and uploads to Codecov
+- ✅ **Sanitizers** - Runs AddressSanitizer and UBSan checks
+- ✅ **Static Analysis** - Runs cppcheck on all source files
+
+All checks must pass before merging pull requests.
 
 ## CMake Presets
 
