@@ -15,6 +15,12 @@ cmake --build --preset dev
 ./build/bin/c-http-server
 ```
 
+**Setup pre-commit hooks (recommended for contributors):**
+```bash
+pip install pre-commit
+pre-commit install
+```
+
 **Run tests:**
 ```bash
 cd build && ctest --output-on-failure
