@@ -5,6 +5,9 @@ on:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
+  schedule:
+    - cron: '0 2 * * *'  # Run nightly at 2 AM UTC
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   test:
@@ -119,3 +122,50 @@ jobs:
                  --error-exitcode=1 \
                  -I include/ \
                  src/
+
+  performance:
+    name: Performance Tests (k6)
+    runs-on: ubuntu-latest
+    # Only run on schedule or manual trigger
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake libsqlite3-dev libssl-dev
+        sudo gpg -k
+        sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+        echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt-get update
+        sudo apt-get install k6
+
+    - name: Configure
+      run: cmake --preset dev
+
+    - name: Build
+      run: cmake --build --preset dev
+
+    - name: Run k6 smoke test
+      run: ./tests/k6/run_tests.sh smoke
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: k6-results
+        path: tests/k6/results/
+
+    - name: Check for performance regression
+      run: |
+        if [ -f tests/k6/results/baseline.json ]; then
+          echo "Baseline found - checking for regressions"
+          # Exit code from run_tests.sh will fail if regression detected
+        else
+          echo "No baseline found - skipping regression check"
+        fi

@@ -12,3 +12,5 @@ vendor/
 node_modules
 test-results
 playwright-report
+tests/k6/results/
+tests/smoke_test.sh
