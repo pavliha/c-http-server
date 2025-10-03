@@ -82,14 +82,21 @@ target_include_directories(test_db PRIVATE
 )
 target_link_libraries(test_db PRIVATE unity ${SQLite3_LIBRARIES})
 
+add_executable(test_router tests/test_router.c src/router.c)
+target_include_directories(test_router PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(test_router PRIVATE unity)
+
 # Add tests
 add_test(NAME HTTPParserTests COMMAND test_http)
 add_test(NAME DatabaseTests COMMAND test_db)
+add_test(NAME RouterTests COMMAND test_router)
 
 # Test runner target
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_http test_db
+    DEPENDS test_http test_db test_router
     COMMENT "Running all tests"
 )
 
