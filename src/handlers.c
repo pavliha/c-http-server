@@ -3,6 +3,7 @@
 #include "http.h"
 #include "security.h"
 #include "static.h"
+#include "tls.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -10,8 +11,8 @@
 #define BUFFER_SIZE 4096
 #define MAX_RESPONSE_SIZE 65536
 
-static void send_response(int client_fd, const char *status, const char *content_type,
-                          const char *body) {
+static void send_response_ex(int client_fd, SSL *ssl, const char *status, const char *content_type,
+                             const char *body) {
   // Send headers first
   char headers[512];
   int header_len = snprintf(headers, sizeof(headers),
@@ -26,17 +27,33 @@ static void send_response(int client_fd, const char *status, const char *content
                             status, content_type, strlen(body));
 
   // Send headers
-  ssize_t written = write(client_fd, headers, header_len);
+  ssize_t written;
+  if (ssl) {
+    written = tls_write(ssl, headers, header_len);
+  } else {
+    written = write(client_fd, headers, header_len);
+  }
+
   if (written < 0) {
     perror("Failed to send headers");
     return;
   }
 
   // Send body
-  written = write(client_fd, body, strlen(body));
+  if (ssl) {
+    written = tls_write(ssl, body, strlen(body));
+  } else {
+    written = write(client_fd, body, strlen(body));
+  }
+
   if (written < 0) {
     perror("Failed to send body");
   }
+}
+
+static void send_response(int client_fd, const char *status, const char *content_type,
+                          const char *body) {
+  send_response_ex(client_fd, NULL, status, content_type, body);
 }
 
 static int validate_credentials(const char *username, const char *password) {
@@ -116,15 +133,13 @@ bool auth_middleware(int client_fd, const http_request_t *request) {
 }
 
 void handle_index(int client_fd, const http_request_t *request, const route_params_t *params) {
-  (void) request; // Unused
-  (void) params;  // Unused
-  send_response(client_fd, "200 OK", "text/html", embedded_html);
+  (void) params; // Unused
+  send_response_ex(client_fd, request->ssl, "200 OK", "text/html", embedded_html);
 }
 
 void handle_dashboard(int client_fd, const http_request_t *request, const route_params_t *params) {
-  (void) request; // Unused
-  (void) params;  // Unused
-  send_response(client_fd, "200 OK", "text/html", embedded_dashboard);
+  (void) params; // Unused
+  send_response_ex(client_fd, request->ssl, "200 OK", "text/html", embedded_dashboard);
 }
 
 void handle_register(int client_fd, const http_request_t *request, const route_params_t *params) {
@@ -135,26 +150,26 @@ void handle_register(int client_fd, const http_request_t *request, const route_p
   if (!request->body ||
       http_parse_post_data(request->body, "username", username, sizeof(username)) != 0 ||
       http_parse_post_data(request->body, "password", password, sizeof(password)) != 0) {
-    send_response(client_fd, "400 Bad Request", "application/json",
-                  "{\"success\":false,\"message\":\"Missing username or password\"}");
+    send_response_ex(client_fd, request->ssl, "400 Bad Request", "application/json",
+                     "{\"success\":false,\"message\":\"Missing username or password\"}");
     return;
   }
 
   // Validate credentials
   if (validate_credentials(username, password) != 0) {
-    send_response(
-        client_fd, "400 Bad Request", "application/json",
+    send_response_ex(
+        client_fd, request->ssl, "400 Bad Request", "application/json",
         "{\"success\":false,\"message\":\"Invalid username or password format. Username must "
         "be alphanumeric (1-64 chars), password 1-128 chars\"}");
     return;
   }
 
   if (db_create_user(username, password) == 0) {
-    send_response(client_fd, "200 OK", "application/json",
-                  "{\"success\":true,\"message\":\"User registered successfully\"}");
+    send_response_ex(client_fd, request->ssl, "200 OK", "application/json",
+                     "{\"success\":true,\"message\":\"User registered successfully\"}");
   } else {
-    send_response(client_fd, "400 Bad Request", "application/json",
-                  "{\"success\":false,\"message\":\"Username already exists\"}");
+    send_response_ex(client_fd, request->ssl, "400 Bad Request", "application/json",
+                     "{\"success\":false,\"message\":\"Username already exists\"}");
   }
 }
 
@@ -164,16 +179,16 @@ void handle_logout(int client_fd, const http_request_t *request, const route_par
   // Extract session token
   char token[SESSION_TOKEN_LENGTH + 1] = {0};
   if (!extract_session_token(request, token, sizeof(token))) {
-    send_response(client_fd, "400 Bad Request", "application/json",
-                  "{\"success\":false,\"message\":\"No session token provided\"}");
+    send_response_ex(client_fd, request->ssl, "400 Bad Request", "application/json",
+                     "{\"success\":false,\"message\":\"No session token provided\"}");
     return;
   }
 
   // Destroy session
   session_destroy(token);
 
-  send_response(client_fd, "200 OK", "application/json",
-                "{\"success\":true,\"message\":\"Logged out successfully\"}");
+  send_response_ex(client_fd, request->ssl, "200 OK", "application/json",
+                   "{\"success\":true,\"message\":\"Logged out successfully\"}");
 }
 
 void handle_login(int client_fd, const http_request_t *request, const route_params_t *params) {
@@ -181,8 +196,8 @@ void handle_login(int client_fd, const http_request_t *request, const route_para
 
   // Rate limiting check using real client IP
   if (!rate_limit_check(request->client_ip)) {
-    send_response(
-        client_fd, "429 Too Many Requests", "application/json",
+    send_response_ex(
+        client_fd, request->ssl, "429 Too Many Requests", "application/json",
         "{\"success\":false,\"message\":\"Too many login attempts. Please try again later\"}");
     return;
   }
@@ -193,15 +208,15 @@ void handle_login(int client_fd, const http_request_t *request, const route_para
   if (!request->body ||
       http_parse_post_data(request->body, "username", username, sizeof(username)) != 0 ||
       http_parse_post_data(request->body, "password", password, sizeof(password)) != 0) {
-    send_response(client_fd, "400 Bad Request", "application/json",
-                  "{\"success\":false,\"message\":\"Missing username or password\"}");
+    send_response_ex(client_fd, request->ssl, "400 Bad Request", "application/json",
+                     "{\"success\":false,\"message\":\"Missing username or password\"}");
     return;
   }
 
   // Validate credentials format
   if (validate_credentials(username, password) != 0) {
-    send_response(client_fd, "400 Bad Request", "application/json",
-                  "{\"success\":false,\"message\":\"Invalid username or password format\"}");
+    send_response_ex(client_fd, request->ssl, "400 Bad Request", "application/json",
+                     "{\"success\":false,\"message\":\"Invalid username or password format\"}");
     return;
   }
 
@@ -217,17 +232,17 @@ void handle_login(int client_fd, const http_request_t *request, const route_para
                  "{\"success\":true,\"message\":\"Login successful\",\"token\":\"%s\",\"csrf_"
                  "token\":\"%s\"}",
                  token, csrf_token);
-        send_response(client_fd, "200 OK", "application/json", response);
+        send_response_ex(client_fd, request->ssl, "200 OK", "application/json", response);
       } else {
-        send_response(client_fd, "500 Internal Server Error", "application/json",
-                      "{\"success\":false,\"message\":\"Failed to create CSRF token\"}");
+        send_response_ex(client_fd, request->ssl, "500 Internal Server Error", "application/json",
+                         "{\"success\":false,\"message\":\"Failed to create CSRF token\"}");
       }
     } else {
-      send_response(client_fd, "500 Internal Server Error", "application/json",
-                    "{\"success\":false,\"message\":\"Failed to create session\"}");
+      send_response_ex(client_fd, request->ssl, "500 Internal Server Error", "application/json",
+                       "{\"success\":false,\"message\":\"Failed to create session\"}");
     }
   } else {
-    send_response(client_fd, "401 Unauthorized", "application/json",
-                  "{\"success\":false,\"message\":\"Invalid username or password\"}");
+    send_response_ex(client_fd, request->ssl, "401 Unauthorized", "application/json",
+                     "{\"success\":false,\"message\":\"Invalid username or password\"}");
   }
 }

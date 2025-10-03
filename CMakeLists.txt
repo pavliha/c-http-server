@@ -15,6 +15,12 @@ if(NOT SQLite3_FOUND)
     message(FATAL_ERROR "SQLite3 library not found")
 endif()
 
+# Find OpenSSL
+find_package(OpenSSL REQUIRED)
+if(NOT OPENSSL_FOUND)
+    message(FATAL_ERROR "OpenSSL library not found")
+endif()
+
 # Read HTML files and convert to C strings
 file(READ ${CMAKE_SOURCE_DIR}/static/index.html HTML_CONTENT)
 string(REPLACE "\"" "\\\"" HTML_CONTENT "${HTML_CONTENT}")
@@ -39,6 +45,7 @@ add_executable(${PROJECT_NAME}
     src/router.c
     src/handlers.c
     src/security.c
+    src/tls.c
 )
 
 # Include directories
@@ -46,11 +53,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_SOURCE_DIR}/include
     ${SQLite3_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
 )
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${SQLite3_LIBRARIES}
+    ${OPENSSL_LIBRARIES}
 )
 
 # Set output directory
@@ -73,8 +82,9 @@ target_include_directories(unity PUBLIC
 add_executable(test_http tests/test_http.c src/http.c)
 target_include_directories(test_http PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${OPENSSL_INCLUDE_DIR}
 )
-target_link_libraries(test_http PRIVATE unity)
+target_link_libraries(test_http PRIVATE unity ${OPENSSL_LIBRARIES})
 
 add_executable(test_db tests/test_db.c src/db.c src/security.c)
 target_include_directories(test_db PRIVATE
@@ -86,8 +96,9 @@ target_link_libraries(test_db PRIVATE unity ${SQLite3_LIBRARIES})
 add_executable(test_router tests/test_router.c src/router.c)
 target_include_directories(test_router PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${OPENSSL_INCLUDE_DIR}
 )
-target_link_libraries(test_router PRIVATE unity)
+target_link_libraries(test_router PRIVATE unity ${OPENSSL_LIBRARIES})
 
 # Add tests
 add_test(NAME HTTPParserTests COMMAND test_http)

@@ -1,6 +1,7 @@
 #ifndef HTTP_H
 #define HTTP_H
 
+#include <openssl/ssl.h>
 #include <stddef.h>
 
 #define MAX_HEADERS 32
@@ -15,6 +16,7 @@ typedef struct {
   char *body;
   int body_length;
   char client_ip[46]; // IPv6 max length
+  SSL *ssl;           // NULL for plain HTTP, non-NULL for HTTPS
 } http_request_t;
 
 int http_parse_request(const char *raw_request, http_request_t *request);

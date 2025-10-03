@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,19 +13,28 @@
 #include "http.h"
 #include "router.h"
 #include "security.h"
+#include "tls.h"
 
 #define PORT 8080
+#define TLS_PORT 8443
 #define BUFFER_SIZE 4096
 #define DB_PATH "data/server.db"
+#define CERT_PATH "certs/cert.pem"
+#define KEY_PATH "certs/key.pem"
 
 // Global state for cleanup
 static int g_server_fd                            = -1;
+static SSL_CTX *g_ssl_ctx                         = NULL;
 static volatile sig_atomic_t g_shutdown_requested = 0;
 
 static void cleanup(void) {
   if (g_server_fd >= 0) {
     close(g_server_fd);
     g_server_fd = -1;
+  }
+  if (g_ssl_ctx) {
+    tls_cleanup_context(g_ssl_ctx);
+    g_ssl_ctx = NULL;
   }
   db_close();
   printf("\nServer shut down gracefully\n");
@@ -53,10 +63,21 @@ static void setup_routes(void) {
   router_register("POST", "/login", handle_login);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
   int server_fd, client_fd;
   struct sockaddr_in address;
   char buffer[BUFFER_SIZE] = {0};
+  bool use_tls             = false;
+  int port                 = PORT;
+
+  // Check for --tls flag
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--tls") == 0) {
+      use_tls = true;
+      port    = TLS_PORT;
+      break;
+    }
+  }
 
   // Setup signal handlers
   signal(SIGINT, signal_handler);
@@ -75,6 +96,18 @@ int main() {
   session_init();
   rate_limit_init();
   csrf_init();
+
+  // Initialize TLS if requested
+  if (use_tls) {
+    tls_init();
+    g_ssl_ctx = tls_create_context(CERT_PATH, KEY_PATH);
+    if (!g_ssl_ctx) {
+      fprintf(stderr, "Failed to create SSL context\n");
+      fprintf(stderr, "Make sure certificates exist at: %s and %s\n", CERT_PATH, KEY_PATH);
+      exit(EXIT_FAILURE);
+    }
+    printf("TLS/SSL initialized successfully\n");
+  }
 
   // Setup routes
   setup_routes();
@@ -96,7 +129,7 @@ int main() {
   // Bind to port
   address.sin_family      = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port        = htons(PORT);
+  address.sin_port        = htons(port);
 
   if (bind(server_fd, (struct sockaddr *) &address, sizeof(address)) < 0) {
     perror("Bind failed");
@@ -109,7 +142,7 @@ int main() {
     exit(EXIT_FAILURE);
   }
 
-  printf("Server listening on port %d...\n", PORT);
+  printf("Server listening on %s://localhost:%d...\n", use_tls ? "https" : "http", port);
   printf("Press Ctrl+C to stop\n");
 
   // Main server loop
@@ -129,15 +162,36 @@ int main() {
     char client_ip[46] = {0};
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
 
-    // Read request
-    ssize_t bytes_read = read(client_fd, buffer, BUFFER_SIZE - 1);
+    // Handle TLS connection if enabled
+    SSL *ssl = NULL;
+    if (use_tls) {
+      ssl = tls_accept_connection(g_ssl_ctx, client_fd);
+      if (!ssl) {
+        fprintf(stderr, "Failed to establish SSL connection\n");
+        close(client_fd);
+        continue;
+      }
+    }
+
+    // Read request (with or without TLS)
+    ssize_t bytes_read;
+    if (use_tls) {
+      bytes_read = tls_read(ssl, buffer, BUFFER_SIZE - 1);
+    } else {
+      bytes_read = read(client_fd, buffer, BUFFER_SIZE - 1);
+    }
+
     if (bytes_read < 0) {
       perror("Read failed");
+      if (ssl)
+        tls_close(ssl);
       close(client_fd);
       continue;
     }
     if (bytes_read == 0) {
       // Client closed connection
+      if (ssl)
+        tls_close(ssl);
       close(client_fd);
       continue;
     }
@@ -153,25 +207,36 @@ int main() {
                                 "Connection: close\r\n"
                                 "\r\n"
                                 "Bad Request";
-      ssize_t written         = write(client_fd, bad_request, strlen(bad_request));
-      if (written < 0) {
-        perror("Write failed");
+      if (ssl) {
+        tls_write(ssl, bad_request, strlen(bad_request));
+        tls_close(ssl);
+      } else {
+        ssize_t written = write(client_fd, bad_request, strlen(bad_request));
+        if (written < 0) {
+          perror("Write failed");
+        }
       }
       close(client_fd);
       memset(buffer, 0, BUFFER_SIZE);
       continue;
     }
 
-    // Set client IP in request
+    // Set client IP and SSL in request
     strncpy(req.client_ip, client_ip, sizeof(req.client_ip) - 1);
+    req.ssl = ssl;
 
     // Handle route
     router_handle(client_fd, &req);
     http_free_request(&req);
 
-    // Shutdown write side to signal we're done sending
-    if (shutdown(client_fd, SHUT_WR) < 0) {
-      perror("Shutdown failed");
+    // Shutdown and close connection
+    if (ssl) {
+      tls_close(ssl);
+    } else {
+      // Shutdown write side to signal we're done sending
+      if (shutdown(client_fd, SHUT_WR) < 0) {
+        perror("Shutdown failed");
+      }
     }
 
     // Close connection
