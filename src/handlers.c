@@ -72,28 +72,30 @@ bool logging_middleware(int client_fd, const http_request_t *request) {
   return true; // Continue to next middleware/handler
 }
 
+// Helper: Extract session token from Authorization header
+static const char *extract_session_token(const http_request_t *request, char *token_buffer,
+                                         size_t buffer_size) {
+  (void) buffer_size; // Unused - token size is fixed
+
+  const char *auth_header = http_get_header(request, "Authorization");
+  if (!auth_header)
+    return NULL;
+
+  if (sscanf(auth_header, "Bearer %32s", token_buffer) != 1)
+    return NULL;
+
+  return token_buffer;
+}
+
 bool auth_middleware(int client_fd, const http_request_t *request) {
   // Extract token from Authorization header
-  const char *auth_header = http_get_header(request, "Authorization");
-
-  if (!auth_header) {
+  char token[SESSION_TOKEN_LENGTH + 1] = {0};
+  if (!extract_session_token(request, token, sizeof(token))) {
     const char *response = "HTTP/1.1 401 Unauthorized\r\n"
                            "Content-Type: application/json\r\n"
                            "Connection: close\r\n"
                            "\r\n"
                            "{\"success\":false,\"message\":\"No authorization token provided\"}";
-    write(client_fd, response, strlen(response));
-    return false;
-  }
-
-  // Parse "Bearer <token>"
-  char token[SESSION_TOKEN_LENGTH + 1] = {0};
-  if (sscanf(auth_header, "Bearer %32s", token) != 1) {
-    const char *response = "HTTP/1.1 401 Unauthorized\r\n"
-                           "Content-Type: application/json\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "{\"success\":false,\"message\":\"Invalid authorization format\"}";
     write(client_fd, response, strlen(response));
     return false;
   }
@@ -154,6 +156,24 @@ void handle_register(int client_fd, const http_request_t *request, const route_p
     send_response(client_fd, "400 Bad Request", "application/json",
                   "{\"success\":false,\"message\":\"Username already exists\"}");
   }
+}
+
+void handle_logout(int client_fd, const http_request_t *request, const route_params_t *params) {
+  (void) params; // Unused
+
+  // Extract session token
+  char token[SESSION_TOKEN_LENGTH + 1] = {0};
+  if (!extract_session_token(request, token, sizeof(token))) {
+    send_response(client_fd, "400 Bad Request", "application/json",
+                  "{\"success\":false,\"message\":\"No session token provided\"}");
+    return;
+  }
+
+  // Destroy session
+  session_destroy(token);
+
+  send_response(client_fd, "200 OK", "application/json",
+                "{\"success\":true,\"message\":\"Logged out successfully\"}");
 }
 
 void handle_login(int client_fd, const http_request_t *request, const route_params_t *params) {

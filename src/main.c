@@ -43,9 +43,10 @@ static void setup_routes(void) {
   // Register routes
   router_register("GET", "/", handle_index);
 
-  // Protected route - requires authentication
+  // Protected routes - require authentication
   middleware_t auth_middlewares[] = {auth_middleware};
   router_register_with_middleware("GET", "/dashboard", handle_dashboard, auth_middlewares, 1);
+  router_register_with_middleware("POST", "/logout", handle_logout, auth_middlewares, 1);
 
   router_register("POST", "/register", handle_register);
   router_register("POST", "/login", handle_login);
