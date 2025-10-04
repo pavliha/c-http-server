@@ -1,4 +1,5 @@
 #include "security.h"
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,17 +7,20 @@
 
 // Session storage
 static session_t sessions[MAX_SESSIONS];
-static bool sessions_initialized = false;
+static bool sessions_initialized      = false;
+static pthread_mutex_t sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Rate limiting storage
 static rate_limit_entry_t rate_limits[MAX_RATE_LIMIT_ENTRIES];
-static bool rate_limit_initialized = false;
+static bool rate_limit_initialized      = false;
+static pthread_mutex_t rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // CSRF token storage
 #define MAX_CSRF_TOKENS 100
 #define CSRF_TOKEN_TIMEOUT 3600 // 1 hour
 static csrf_token_t csrf_tokens[MAX_CSRF_TOKENS];
-static bool csrf_initialized = false;
+static bool csrf_initialized      = false;
+static pthread_mutex_t csrf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Constant-time string comparison (timing-attack resistant)
 int secure_compare(const char *a, const char *b, size_t len) {
@@ -79,8 +83,22 @@ void session_init(void) {
   sessions_initialized = true;
 }
 
+// Internal helper - caller must hold sessions_mutex
+static void session_cleanup_expired_locked(void) {
+  time_t now = time(NULL);
+
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    if (sessions[i].active && (now - sessions[i].last_accessed > SESSION_TIMEOUT)) {
+      sessions[i].active = false;
+      memset(&sessions[i], 0, sizeof(session_t));
+    }
+  }
+}
+
 const char *session_create(const char *username) {
-  session_cleanup_expired();
+  pthread_mutex_lock(&sessions_mutex);
+
+  session_cleanup_expired_locked();
 
   // Find free slot
   for (int i = 0; i < MAX_SESSIONS; i++) {
@@ -90,16 +108,21 @@ const char *session_create(const char *username) {
       sessions[i].created_at    = time(NULL);
       sessions[i].last_accessed = time(NULL);
       sessions[i].active        = true;
-      return sessions[i].token;
+      const char *token         = sessions[i].token;
+      pthread_mutex_unlock(&sessions_mutex);
+      return token;
     }
   }
 
+  pthread_mutex_unlock(&sessions_mutex);
   return NULL; // No free slots
 }
 
 bool session_validate(const char *token, char *username_out, size_t username_size) {
   if (!token)
     return false;
+
+  pthread_mutex_lock(&sessions_mutex);
 
   time_t now = time(NULL);
 
@@ -108,6 +131,7 @@ bool session_validate(const char *token, char *username_out, size_t username_siz
       // Check if expired
       if (now - sessions[i].last_accessed > SESSION_TIMEOUT) {
         sessions[i].active = false;
+        pthread_mutex_unlock(&sessions_mutex);
         return false;
       }
 
@@ -119,10 +143,12 @@ bool session_validate(const char *token, char *username_out, size_t username_siz
         username_out[username_size - 1] = '\0';
       }
 
+      pthread_mutex_unlock(&sessions_mutex);
       return true;
     }
   }
 
+  pthread_mutex_unlock(&sessions_mutex);
   return false;
 }
 
@@ -130,24 +156,24 @@ void session_destroy(const char *token) {
   if (!token)
     return;
 
+  pthread_mutex_lock(&sessions_mutex);
+
   for (int i = 0; i < MAX_SESSIONS; i++) {
     if (sessions[i].active && strcmp(sessions[i].token, token) == 0) {
       sessions[i].active = false;
       memset(&sessions[i], 0, sizeof(session_t));
+      pthread_mutex_unlock(&sessions_mutex);
       return;
     }
   }
+
+  pthread_mutex_unlock(&sessions_mutex);
 }
 
 void session_cleanup_expired(void) {
-  time_t now = time(NULL);
-
-  for (int i = 0; i < MAX_SESSIONS; i++) {
-    if (sessions[i].active && (now - sessions[i].last_accessed > SESSION_TIMEOUT)) {
-      sessions[i].active = false;
-      memset(&sessions[i], 0, sizeof(session_t));
-    }
-  }
+  pthread_mutex_lock(&sessions_mutex);
+  session_cleanup_expired_locked();
+  pthread_mutex_unlock(&sessions_mutex);
 }
 
 // Rate limiting
@@ -163,6 +189,8 @@ bool rate_limit_check(const char *ip) {
   if (!ip)
     return false;
 
+  pthread_mutex_lock(&rate_limit_mutex);
+
   time_t now = time(NULL);
 
   // Find or create entry for this IP
@@ -177,12 +205,15 @@ bool rate_limit_check(const char *ip) {
         // Reset window
         rate_limits[i].attempts     = 1;
         rate_limits[i].window_start = now;
+        pthread_mutex_unlock(&rate_limit_mutex);
         return true;
       }
 
       // Within window
       rate_limits[i].attempts++;
-      return rate_limits[i].attempts <= RATE_LIMIT_MAX_ATTEMPTS;
+      bool result = rate_limits[i].attempts <= RATE_LIMIT_MAX_ATTEMPTS;
+      pthread_mutex_unlock(&rate_limit_mutex);
+      return result;
     }
 
     // Track free slot
@@ -203,10 +234,13 @@ bool rate_limit_check(const char *ip) {
   rate_limits[slot].attempts     = 1;
   rate_limits[slot].window_start = now;
 
+  pthread_mutex_unlock(&rate_limit_mutex);
   return true;
 }
 
 void rate_limit_cleanup(void) {
+  pthread_mutex_lock(&rate_limit_mutex);
+
   time_t now = time(NULL);
 
   for (int i = 0; i < MAX_RATE_LIMIT_ENTRIES; i++) {
@@ -214,6 +248,8 @@ void rate_limit_cleanup(void) {
       memset(&rate_limits[i], 0, sizeof(rate_limit_entry_t));
     }
   }
+
+  pthread_mutex_unlock(&rate_limit_mutex);
 }
 
 // CSRF protection
@@ -225,11 +261,25 @@ void csrf_init(void) {
   csrf_initialized = true;
 }
 
+// Internal helper - caller must hold csrf_mutex
+static void csrf_cleanup_expired_locked(void) {
+  time_t now = time(NULL);
+
+  for (int i = 0; i < MAX_CSRF_TOKENS; i++) {
+    if (csrf_tokens[i].active && (now - csrf_tokens[i].created_at > CSRF_TOKEN_TIMEOUT)) {
+      csrf_tokens[i].active = false;
+      memset(&csrf_tokens[i], 0, sizeof(csrf_token_t));
+    }
+  }
+}
+
 const char *csrf_generate(const char *session_token) {
   if (!session_token)
     return NULL;
 
-  csrf_cleanup_expired();
+  pthread_mutex_lock(&csrf_mutex);
+
+  csrf_cleanup_expired_locked();
 
   // Find free slot
   for (int i = 0; i < MAX_CSRF_TOKENS; i++) {
@@ -239,16 +289,21 @@ const char *csrf_generate(const char *session_token) {
               sizeof(csrf_tokens[i].session_token) - 1);
       csrf_tokens[i].created_at = time(NULL);
       csrf_tokens[i].active     = true;
-      return csrf_tokens[i].token;
+      const char *token         = csrf_tokens[i].token;
+      pthread_mutex_unlock(&csrf_mutex);
+      return token;
     }
   }
 
+  pthread_mutex_unlock(&csrf_mutex);
   return NULL;
 }
 
 bool csrf_validate(const char *csrf_token, const char *session_token) {
   if (!csrf_token || !session_token)
     return false;
+
+  pthread_mutex_lock(&csrf_mutex);
 
   time_t now = time(NULL);
 
@@ -257,30 +312,29 @@ bool csrf_validate(const char *csrf_token, const char *session_token) {
       // Check if expired
       if (now - csrf_tokens[i].created_at > CSRF_TOKEN_TIMEOUT) {
         csrf_tokens[i].active = false;
+        pthread_mutex_unlock(&csrf_mutex);
         return false;
       }
 
       // Verify it belongs to this session
       if (secure_compare(csrf_tokens[i].session_token, session_token, 0) != 0) {
+        pthread_mutex_unlock(&csrf_mutex);
         return false;
       }
 
       // One-time use: invalidate after validation
       csrf_tokens[i].active = false;
+      pthread_mutex_unlock(&csrf_mutex);
       return true;
     }
   }
 
+  pthread_mutex_unlock(&csrf_mutex);
   return false;
 }
 
 void csrf_cleanup_expired(void) {
-  time_t now = time(NULL);
-
-  for (int i = 0; i < MAX_CSRF_TOKENS; i++) {
-    if (csrf_tokens[i].active && (now - csrf_tokens[i].created_at > CSRF_TOKEN_TIMEOUT)) {
-      csrf_tokens[i].active = false;
-      memset(&csrf_tokens[i], 0, sizeof(csrf_token_t));
-    }
-  }
+  pthread_mutex_lock(&csrf_mutex);
+  csrf_cleanup_expired_locked();
+  pthread_mutex_unlock(&csrf_mutex);
 }

@@ -46,6 +46,7 @@ add_executable(${PROJECT_NAME}
     src/handlers.c
     src/security.c
     src/tls.c
+    src/thread_pool.c
 )
 
 # Include directories
@@ -60,6 +61,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${SQLite3_LIBRARIES}
     ${OPENSSL_LIBRARIES}
+    pthread
 )
 
 # Set output directory

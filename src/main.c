@@ -13,6 +13,7 @@
 #include "http.h"
 #include "router.h"
 #include "security.h"
+#include "thread_pool.h"
 #include "tls.h"
 
 #define PORT 8080
@@ -21,13 +22,26 @@
 #define DB_PATH "data/server.db"
 #define CERT_PATH "certs/cert.pem"
 #define KEY_PATH "certs/key.pem"
+#define THREAD_POOL_SIZE 8
+
+// Client connection context
+typedef struct {
+  int client_fd;
+  char client_ip[46];
+  SSL_CTX *ssl_ctx; // NULL for HTTP, non-NULL for HTTPS
+} client_context_t;
 
 // Global state for cleanup
 static int g_server_fd                            = -1;
 static SSL_CTX *g_ssl_ctx                         = NULL;
+static thread_pool_t *g_thread_pool               = NULL;
 static volatile sig_atomic_t g_shutdown_requested = 0;
 
 static void cleanup(void) {
+  if (g_thread_pool) {
+    thread_pool_destroy(g_thread_pool);
+    g_thread_pool = NULL;
+  }
   if (g_server_fd >= 0) {
     close(g_server_fd);
     g_server_fd = -1;
@@ -61,6 +75,74 @@ static void setup_routes(void) {
 
   router_register("POST", "/register", handle_register);
   router_register("POST", "/login", handle_login);
+}
+
+static void handle_client_connection(void *arg) {
+  client_context_t *ctx    = (client_context_t *) arg;
+  char buffer[BUFFER_SIZE] = {0};
+  SSL *ssl                 = NULL;
+
+  // Handle TLS if needed
+  if (ctx->ssl_ctx) {
+    ssl = tls_accept_connection(ctx->ssl_ctx, ctx->client_fd);
+    if (!ssl) {
+      fprintf(stderr, "Failed to establish SSL connection\n");
+      close(ctx->client_fd);
+      free(ctx);
+      return;
+    }
+  }
+
+  // Read request
+  ssize_t bytes_read;
+  if (ssl) {
+    bytes_read = tls_read(ssl, buffer, BUFFER_SIZE - 1);
+  } else {
+    bytes_read = read(ctx->client_fd, buffer, BUFFER_SIZE - 1);
+  }
+
+  if (bytes_read <= 0) {
+    if (ssl)
+      tls_close(ssl);
+    close(ctx->client_fd);
+    free(ctx);
+    return;
+  }
+  buffer[bytes_read] = '\0';
+
+  // Parse HTTP request
+  http_request_t req;
+  if (http_parse_request(buffer, &req) != 0) {
+    const char *bad_request = "HTTP/1.1 400 Bad Request\r\n"
+                              "Content-Type: text/plain\r\n"
+                              "Connection: close\r\n\r\nBad Request";
+    if (ssl) {
+      tls_write(ssl, bad_request, strlen(bad_request));
+      tls_close(ssl);
+    } else {
+      write(ctx->client_fd, bad_request, strlen(bad_request));
+    }
+    close(ctx->client_fd);
+    free(ctx);
+    return;
+  }
+
+  // Set client IP and SSL in request
+  strncpy(req.client_ip, ctx->client_ip, sizeof(req.client_ip) - 1);
+  req.ssl = ssl;
+
+  // Handle route
+  router_handle(ctx->client_fd, &req);
+  http_free_request(&req);
+
+  // Cleanup
+  if (ssl) {
+    tls_close(ssl);
+  } else {
+    shutdown(ctx->client_fd, SHUT_WR);
+  }
+  close(ctx->client_fd);
+  free(ctx);
 }
 
 int main(int argc, char *argv[]) {
@@ -108,6 +190,14 @@ int main(int argc, char *argv[]) {
     }
     printf("TLS/SSL initialized successfully\n");
   }
+
+  // Create thread pool
+  g_thread_pool = thread_pool_create(THREAD_POOL_SIZE);
+  if (!g_thread_pool) {
+    fprintf(stderr, "Failed to create thread pool\n");
+    exit(EXIT_FAILURE);
+  }
+  printf("Thread pool created with %d threads\n", THREAD_POOL_SIZE);
 
   // Setup routes
   setup_routes();
@@ -158,92 +248,23 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    // Extract client IP address
-    char client_ip[46] = {0};
-    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
-
-    // Handle TLS connection if enabled
-    SSL *ssl = NULL;
-    if (use_tls) {
-      ssl = tls_accept_connection(g_ssl_ctx, client_fd);
-      if (!ssl) {
-        fprintf(stderr, "Failed to establish SSL connection\n");
-        close(client_fd);
-        continue;
-      }
-    }
-
-    // Read request (with or without TLS)
-    ssize_t bytes_read;
-    if (use_tls) {
-      bytes_read = tls_read(ssl, buffer, BUFFER_SIZE - 1);
-    } else {
-      bytes_read = read(client_fd, buffer, BUFFER_SIZE - 1);
-    }
-
-    if (bytes_read < 0) {
-      perror("Read failed");
-      if (ssl)
-        tls_close(ssl);
+    // Create client context
+    client_context_t *ctx = (client_context_t *) malloc(sizeof(client_context_t));
+    if (!ctx) {
       close(client_fd);
       continue;
     }
-    if (bytes_read == 0) {
-      // Client closed connection
-      if (ssl)
-        tls_close(ssl);
+
+    ctx->client_fd = client_fd;
+    ctx->ssl_ctx   = use_tls ? g_ssl_ctx : NULL;
+    inet_ntop(AF_INET, &client_addr.sin_addr, ctx->client_ip, sizeof(ctx->client_ip));
+
+    // Add task to thread pool
+    if (!thread_pool_add_task(g_thread_pool, handle_client_connection, ctx)) {
+      fprintf(stderr, "Failed to add task to thread pool\n");
       close(client_fd);
-      continue;
+      free(ctx);
     }
-    buffer[bytes_read] = '\0';
-
-    printf("Request received:\n%s\n", buffer);
-
-    // Parse HTTP request
-    http_request_t req;
-    if (http_parse_request(buffer, &req) != 0) {
-      const char *bad_request = "HTTP/1.1 400 Bad Request\r\n"
-                                "Content-Type: text/plain\r\n"
-                                "Connection: close\r\n"
-                                "\r\n"
-                                "Bad Request";
-      if (ssl) {
-        tls_write(ssl, bad_request, strlen(bad_request));
-        tls_close(ssl);
-      } else {
-        ssize_t written = write(client_fd, bad_request, strlen(bad_request));
-        if (written < 0) {
-          perror("Write failed");
-        }
-      }
-      close(client_fd);
-      memset(buffer, 0, BUFFER_SIZE);
-      continue;
-    }
-
-    // Set client IP and SSL in request
-    strncpy(req.client_ip, client_ip, sizeof(req.client_ip) - 1);
-    req.ssl = ssl;
-
-    // Handle route
-    router_handle(client_fd, &req);
-    http_free_request(&req);
-
-    // Shutdown and close connection
-    if (ssl) {
-      tls_close(ssl);
-    } else {
-      // Shutdown write side to signal we're done sending
-      if (shutdown(client_fd, SHUT_WR) < 0) {
-        perror("Shutdown failed");
-      }
-    }
-
-    // Close connection
-    close(client_fd);
-
-    // Clear buffer for next request
-    memset(buffer, 0, BUFFER_SIZE);
   }
 
   return 0;
